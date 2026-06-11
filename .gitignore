@@ -1,0 +1,10 @@
+# Local-only operational notes (server IPs, container names, paths, etc.)
+docs/local/
+
+# Claude Code local settings (may contain tokens)
+.claude/
+
+# OS / editor noise
+Thumbs.db
+.DS_Store
+*.swp
