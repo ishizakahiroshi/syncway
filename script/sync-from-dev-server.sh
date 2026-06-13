@@ -8,32 +8,46 @@ LOCAL_PATH="${LOCAL_PATH:-}"
 SSH_PORT="${SSH_PORT:-22}"
 SSH_KEY="${SSH_KEY:-}"
 SSH_KEY_RSYNC="$SSH_KEY"
-DOCKER_CONTAINER="${DOCKER_CONTAINER:-}"
+CONTAINER="${CONTAINER:-}"
 EXTRA_EXCLUDES="${EXCLUDES:-}"
 DRY_RUN=""
+DELETE=""
+CONFIRM_DELETE=""
+INCLUDE_GIT=""
 USING_CWRSYNC=0
 
 usage() {
 	cat <<'HELP'
-Generic dev-server downloader (rsync over ssh, optional Docker tar mode).
+Generic dev-server downloader (remote -> local, rsync over ssh).
+
+Safety: deletions are OFF by default. --delete only PREVIEWS (forced dry-run);
+add --confirm-delete to actually remove local files absent on the remote.
 
 Usage:
-  ./sync-from-dev-server.sh user@host [--dry-run|-d] [--docker=CONTAINER]
+  ./sync-from-dev-server.sh user@host [options]
+
+Options:
+  --dry-run, -d            Preview only, make no changes.
+  --delete                 Mirror: remove local files absent on the remote (PREVIEW unless --confirm-delete).
+  --confirm-delete         Required with --delete to actually delete.
+  --container=NAME         Pull from a Docker container via docker exec rsync
+                           (REMOTE_PATH is then a path INSIDE the container).
+  --include-git            Do not exclude .git/.
 
 REMOTE_PATH and LOCAL_PATH are required (pass them as environment variables).
 
 Examples:
   REMOTE_PATH=/home/<user>/dev/myproj/ LOCAL_PATH=/c/projects/myproj/ \
-    ./sync-from-dev-server.sh ubuntu@dev.example.com
-  REMOTE_PATH=/srv/app/ LOCAL_PATH=/c/projects/app/ \
     ./sync-from-dev-server.sh ubuntu@dev.example.com --dry-run
+  REMOTE_PATH=/app/ LOCAL_PATH=/c/projects/app/ \
+    ./sync-from-dev-server.sh ubuntu@dev.example.com --container=my_container
 
 Environment variables:
   REMOTE_PATH=/home/<user>/dev/myproj/   (required)
   LOCAL_PATH=/c/projects/myproj/              (required)
   SSH_PORT=22
   SSH_KEY=/c/projects/.ssh/id_ed25519
-  DOCKER_CONTAINER=container_name        (or pass --docker=name)
+  CONTAINER=container_name               (or pass --container=name)
   EXCLUDES="node_modules/ dist/"         (space-separated extra rsync excludes)
 HELP
 }
@@ -48,7 +62,10 @@ shift
 for arg in "$@"; do
 	case "$arg" in
 		--dry-run|-d) DRY_RUN="--dry-run" ;;
-		--docker=*) DOCKER_CONTAINER="${arg#--docker=}" ;;
+		--delete) DELETE="--delete" ;;
+		--confirm-delete) CONFIRM_DELETE=1 ;;
+		--container=*) CONTAINER="${arg#--container=}" ;;
+		--include-git) INCLUDE_GIT=1 ;;
 		*) printf 'Unknown option: %s\n' "$arg" >&2; usage >&2; exit 1 ;;
 	esac
 done
@@ -59,11 +76,21 @@ if [ -z "$REMOTE_PATH" ] || [ -z "$LOCAL_PATH" ]; then
 	exit 1
 fi
 
+# Delete safety: --delete alone is preview-only; needs --confirm-delete to apply.
+DELETE_PREVIEW_ONLY=0
+if [ -n "$DELETE" ] && [ -z "$CONFIRM_DELETE" ]; then
+	DELETE_PREVIEW_ONLY=1
+	DRY_RUN="--dry-run"
+fi
+
 LOCAL_PATH_NATIVE="$LOCAL_PATH"
 LOCAL_PATH_RSYNC="$LOCAL_PATH"
 
-# Build the exclude argument list (.git is always excluded).
-EXCLUDE_ARGS=(--exclude='.git/')
+# Build the exclude argument list (.git is excluded unless --include-git).
+EXCLUDE_ARGS=()
+if [ -z "$INCLUDE_GIT" ]; then
+	EXCLUDE_ARGS+=(--exclude='.git/')
+fi
 for pat in $EXTRA_EXCLUDES; do
 	EXCLUDE_ARGS+=("--exclude=$pat")
 done
@@ -87,49 +114,37 @@ if [ -n "$SSH_KEY_RSYNC" ]; then
 	SSH_OPTS="-i $SSH_KEY_RSYNC $SSH_OPTS"
 fi
 
-if [ -n "$DOCKER_CONTAINER" ]; then
-	if [ -n "$DRY_RUN" ]; then
-		printf 'Dry-run is not available in Docker tar mode.\n' >&2
-		exit 1
-	fi
-
-	tmp_parent="$(dirname "$LOCAL_PATH_NATIVE")"
-	tmp_dir="$(mktemp -d "$tmp_parent/.dev-vps-sync.XXXXXX")"
-	trap 'rm -rf "$tmp_dir"' EXIT
-	tmp_source="$tmp_dir/$(basename "$REMOTE_PATH")/"
-	if [ "$USING_CWRSYNC" -eq 1 ]; then
-		tmp_source="$(to_cyg "$tmp_source")"
-	fi
-
-	printf 'Copying %s:%s from Docker container %s -> %s\n' "$REMOTE" "$REMOTE_PATH" "$DOCKER_CONTAINER" "$LOCAL_PATH_NATIVE"
-	ssh $SSH_OPTS "$REMOTE" \
-		"docker exec '$DOCKER_CONTAINER' tar --exclude='.git' -C '$(dirname "$REMOTE_PATH")' -czf - '$(basename "$REMOTE_PATH")'" |
-		tar -xzf - -C "$tmp_dir"
-
-	rsync -av --delete \
-		"${EXCLUDE_ARGS[@]}" \
-		"$tmp_source" \
-		"$LOCAL_PATH_RSYNC"
-
-	printf 'Sync completed.\n'
-	exit 0
+RSYNC_ARGS=(-avz)
+[ -n "$DELETE" ] && RSYNC_ARGS+=("$DELETE")
+[ -n "$DRY_RUN" ] && RSYNC_ARGS+=("$DRY_RUN")
+RSYNC_ARGS+=("${EXCLUDE_ARGS[@]}")
+if [ -n "$CONTAINER" ]; then
+	RSYNC_ARGS+=(--rsync-path="docker exec -i $CONTAINER rsync")
 fi
 
-RSYNC_ARGS=(
-	-avz
-	--delete
-	"${EXCLUDE_ARGS[@]}"
-)
-
-if [ -n "$DRY_RUN" ]; then
-	RSYNC_ARGS+=("$DRY_RUN")
+# Warn before any destructive operation.
+if [ "$DELETE_PREVIEW_ONLY" -eq 1 ]; then
+	printf 'WARNING: --delete will REMOVE local files absent on the remote.\n' >&2
+	printf 'WARNING: this run is a PREVIEW ONLY (forced --dry-run); nothing will change.\n' >&2
+	printf 'WARNING: review the "deleting ..." lines, then re-run with --confirm-delete.\n' >&2
+elif [ -n "$DELETE" ] && [ -n "$CONFIRM_DELETE" ]; then
+	printf 'WARNING: --delete --confirm-delete: local files absent on the remote WILL be deleted.\n' >&2
 fi
 
-printf 'Syncing %s:%s -> %s\n' "$REMOTE" "$REMOTE_PATH" "$LOCAL_PATH_NATIVE"
+if [ -n "$CONTAINER" ]; then
+	printf 'Downloading %s:%s (in container %s) -> %s\n' "$REMOTE" "$REMOTE_PATH" "$CONTAINER" "$LOCAL_PATH_NATIVE"
+else
+	printf 'Downloading %s:%s -> %s\n' "$REMOTE" "$REMOTE_PATH" "$LOCAL_PATH_NATIVE"
+fi
+[ -n "$DRY_RUN" ] && printf '(dry-run: no changes will be made)\n'
 
 rsync "${RSYNC_ARGS[@]}" \
 	-e "ssh $SSH_OPTS" \
 	"$REMOTE:$REMOTE_PATH" \
 	"$LOCAL_PATH_RSYNC"
 
-printf 'Sync completed.\n'
+if [ "$DELETE_PREVIEW_ONLY" -eq 1 ]; then
+	printf 'Preview complete. Re-run with --confirm-delete to apply deletions.\n'
+else
+	printf 'Download completed.\n'
+fi

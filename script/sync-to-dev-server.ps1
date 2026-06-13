@@ -39,6 +39,11 @@ param(
 
     [switch]$IncludeGit,
 
+    # rsync engine: by default native rsync.exe (e.g. cwrsync) is used and WSL is
+    # never started automatically. Pass -UseWsl / SYNCWAY_USE_WSL=1 to opt in to
+    # WSL's rsync instead.
+    [switch]$UseWsl,
+
     [switch]$DryRun
 )
 
@@ -52,6 +57,24 @@ function Convert-ToWslPath {
     $drive = $fullPath.Substring(0, 1).ToLowerInvariant()
     $rest = $fullPath.Substring(2).TrimStart("\") -replace "\\", "/"
     return "/mnt/$drive/$rest"
+}
+
+function Convert-ToCygPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $drive = $fullPath.Substring(0, 1).ToLowerInvariant()
+    $rest = $fullPath.Substring(2).TrimStart("\") -replace "\\", "/"
+    return "/cygdrive/$drive/$rest"
+}
+
+# Locate a native rsync.exe (preferring cwrsync). Returns the exe path or $null.
+function Get-NativeRsync {
+    $cwrsync = Join-Path $HOME "scoop\apps\cwrsync\current\bin\rsync.exe"
+    if (Test-Path $cwrsync) { return $cwrsync }
+    $cmd = Get-Command rsync.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return $null
 }
 
 function Get-SshCommand {
@@ -75,29 +98,47 @@ function Invoke-Rsync {
     $localFull = [System.IO.Path]::GetFullPath($LocalPath)
     $remoteDest = ("{0}:{1}" -f $Remote, $RemotePath.TrimEnd("/") + "/")
 
-    $wsl = Get-Command wsl.exe -ErrorAction SilentlyContinue
-    if ($wsl) {
-        & wsl.exe sh -lc "command -v rsync >/dev/null 2>&1"
-        if ($LASTEXITCODE -eq 0) {
-            $wslSource = $localFull.TrimEnd("\") + "\" | ForEach-Object { (Convert-ToWslPath -Path $_).TrimEnd("/") + "/" }
-            $wslKey = if (-not [string]::IsNullOrWhiteSpace($SshKey)) { Convert-ToWslPath -Path $SshKey } else { "" }
-            $sshCmd = Get-SshCommand -KeyPath $wslKey
+    $forceWsl = $UseWsl -or -not [string]::IsNullOrWhiteSpace($env:SYNCWAY_USE_WSL)
 
-            $argsForWsl = @("rsync") + $Flags + @("-e", $sshCmd, $wslSource, $remoteDest)
-            & wsl.exe @argsForWsl
-            return $LASTEXITCODE
+    # Opt-in only: use WSL's rsync when explicitly requested (-UseWsl). WSL is never
+    # started automatically, so it does not spin up the VM behind your back.
+    if ($forceWsl) {
+        $wsl = Get-Command wsl.exe -ErrorAction SilentlyContinue
+        if ($wsl) {
+            & wsl.exe sh -lc "command -v rsync >/dev/null 2>&1"
+            if ($LASTEXITCODE -eq 0) {
+                $wslSource = $localFull.TrimEnd("\") + "\" | ForEach-Object { (Convert-ToWslPath -Path $_).TrimEnd("/") + "/" }
+                $wslKey = if (-not [string]::IsNullOrWhiteSpace($SshKey)) { Convert-ToWslPath -Path $SshKey } else { "" }
+                $sshCmd = Get-SshCommand -KeyPath $wslKey
+
+                $argsForWsl = @("rsync") + $Flags + @("-e", $sshCmd, $wslSource, $remoteDest)
+                & wsl.exe @argsForWsl
+                return
+            }
         }
+        throw "WSL rsync was requested (-UseWsl) but WSL or its rsync was not found."
     }
 
-    $rsync = Get-Command rsync.exe -ErrorAction SilentlyContinue
-    if (-not $rsync) {
-        throw "rsync was not found. Install WSL with rsync, or install rsync.exe for Windows."
+    # Default: native rsync.exe only (e.g. cwrsync). No automatic WSL fallback.
+    $rsyncExe = Get-NativeRsync
+    if (-not $rsyncExe) {
+        throw "rsync.exe was not found. Install it (e.g. 'scoop install rsync'), or pass -UseWsl / SYNCWAY_USE_WSL=1 to use WSL's rsync."
     }
-
-    $nativeSource = $localFull.TrimEnd("\") + "\"
-    $sshCmd = Get-SshCommand -KeyPath $SshKey
-    & $rsync.Source @Flags "-e" $sshCmd $nativeSource $remoteDest
-    return $LASTEXITCODE
+    # cwrsync is cygwin-based: a Windows "C:\..." path is read as host:path,
+    # so convert source + key to /cygdrive form and use cwrsync's own ssh.
+    $cygSource = (Convert-ToCygPath -Path $localFull).TrimEnd("/") + "/"
+    $cygKey = if (-not [string]::IsNullOrWhiteSpace($SshKey)) { Convert-ToCygPath -Path $SshKey } else { "" }
+    $sshCmd = Get-SshCommand -KeyPath $cygKey
+    $savedPath = $env:PATH
+    $env:PATH = (Split-Path $rsyncExe) + ";" + $env:PATH
+    try {
+        # Let rsync's output stream to the console; read exit via $LASTEXITCODE.
+        & $rsyncExe @Flags "-e" $sshCmd $cygSource $remoteDest
+        return
+    }
+    finally {
+        $env:PATH = $savedPath
+    }
 }
 
 # --- Build rsync flags -------------------------------------------------------
@@ -153,7 +194,8 @@ $dstLabel = if ($Container) { "{0}:{1} (in container '{2}')" -f $Remote, $Remote
 Write-Host ("Uploading {0} -> {1}" -f $srcLabel, $dstLabel)
 if ($effectiveDryRun) { Write-Host "(dry-run: no changes will be made)" }
 
-$exitCode = Invoke-Rsync -Flags $flags
+Invoke-Rsync -Flags $flags
+$exitCode = $LASTEXITCODE
 
 if ($exitCode -ne 0) {
     exit $exitCode

@@ -1,4 +1,27 @@
-# Keep shell scripts LF so they run on Linux even when checked out on Windows.
-*.sh text eol=lf
-# PowerShell scripts use CRLF.
-*.ps1 text eol=crlf
+# Deterministic line endings for every contributor, regardless of each
+# machine's core.autocrlf (Git for Windows sets it to true at system level).
+# Without this, the *.sh scripts can be checked out with CRLF and break on
+# Unix with: bad interpreter: /usr/bin/env bash^M
+
+# Default: treat as text and normalize to LF inside the repository.
+* text=auto
+
+# Unix shell scripts must stay LF even in the working tree on Windows.
+*.sh   text eol=lf
+*.bash text eol=lf
+
+# Windows-native scripts use CRLF in the working tree.
+*.ps1  text eol=crlf
+*.psm1 text eol=crlf
+*.psd1 text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Binary assets: never apply line-ending conversion.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.svg  text
