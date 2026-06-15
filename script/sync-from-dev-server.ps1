@@ -67,8 +67,12 @@
         -RemotePath /app/ -LocalPath C:\projects\app\ -Container my_container
 
 .NOTES
-    SSH option StrictHostKeyChecking=accept-new is used (TOFU on first
-    contact). For full help, run: Get-Help .\sync-from-dev-server.ps1 -Full
+    SSH default is StrictHostKeyChecking=accept-new (TOFU on first contact);
+    pass -StrictHostKey to switch to StrictHostKeyChecking=yes. The rsync
+    binary can be pinned via the SYNCWAY_RSYNC env var; WSL rsync can be
+    opted in via -UseWsl / SYNCWAY_USE_WSL=1 (accepted truthy values:
+    1, true, yes, on — case-insensitive). For full help, run:
+    Get-Help .\sync-from-dev-server.ps1 -Full
 #>
 [CmdletBinding()]
 param(
@@ -85,6 +89,10 @@ param(
     [string]$LocalPath,
 
     # SSH private key path (optional; falls back to ssh defaults).
+    # Reject literal single quote — the path is single-quoted inside the
+    # rsync -e value so an embedded ' would break out and let subsequent
+    # characters be interpreted as additional ssh options.
+    [ValidatePattern("^[^']*$")]
     [string]$SshKey,
 
     [int]$Port = 22,
@@ -129,6 +137,9 @@ function Convert-ToWslPath {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     $fullPath = [System.IO.Path]::GetFullPath($Path)
+    if ($fullPath.StartsWith("\\")) {
+        throw "UNC paths (\\server\share\...) are not supported by Syncway's path translation. Map the UNC to a drive letter (e.g. New-PSDrive) and retry."
+    }
     $drive = $fullPath.Substring(0, 1).ToLowerInvariant()
     $rest = $fullPath.Substring(2).TrimStart("\") -replace "\\", "/"
     return "/mnt/$drive/$rest"
@@ -138,13 +149,25 @@ function Convert-ToCygPath {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     $fullPath = [System.IO.Path]::GetFullPath($Path)
+    if ($fullPath.StartsWith("\\")) {
+        throw "UNC paths (\\server\share\...) are not supported by Syncway's path translation. Map the UNC to a drive letter (e.g. New-PSDrive) and retry."
+    }
     $drive = $fullPath.Substring(0, 1).ToLowerInvariant()
     $rest = $fullPath.Substring(2).TrimStart("\") -replace "\\", "/"
     return "/cygdrive/$drive/$rest"
 }
 
-# Locate a native rsync.exe (preferring cwrsync). Returns the exe path or $null.
+# Locate a native rsync.exe. Priority:
+#   1. SYNCWAY_RSYNC env (explicit path to a trusted rsync executable; mirrors
+#      the bash variant so a single env var pins the binary in both shells)
+#   2. Scoop cwrsync default: $HOME\scoop\apps\cwrsync\current\bin\rsync.exe
+#   3. rsync.exe on PATH (Get-Command)
+# Returns the exe path or $null.
 function Get-NativeRsync {
+    if (-not [string]::IsNullOrWhiteSpace($env:SYNCWAY_RSYNC) -and
+        (Test-Path -LiteralPath $env:SYNCWAY_RSYNC -PathType Leaf)) {
+        return $env:SYNCWAY_RSYNC
+    }
     $cwrsync = Join-Path $HOME "scoop\apps\cwrsync\current\bin\rsync.exe"
     if (Test-Path $cwrsync) { return $cwrsync }
     $cmd = Get-Command rsync.exe -ErrorAction SilentlyContinue
@@ -178,7 +201,14 @@ function Invoke-Rsync {
     $localFull = [System.IO.Path]::GetFullPath($LocalPath)
     $remoteSource = "{0}:{1}" -f $Remote, ($RemotePath.TrimEnd("/") + "/")
 
-    $forceWsl = $UseWsl -or -not [string]::IsNullOrWhiteSpace($env:SYNCWAY_USE_WSL)
+    # SYNCWAY_USE_WSL: accept only explicit truthy values (case-insensitive)
+    # so a user who sets the var to "0" / "false" / "no" — common convention
+    # for disabling a toggle — does not silently launch WSL behind their back.
+    $wslEnvOn = $false
+    if (-not [string]::IsNullOrWhiteSpace($env:SYNCWAY_USE_WSL)) {
+        $wslEnvOn = @("1", "true", "yes", "on") -contains $env:SYNCWAY_USE_WSL.Trim().ToLowerInvariant()
+    }
+    $forceWsl = $UseWsl -or $wslEnvOn
 
     # Opt-in only: use WSL's rsync when explicitly requested (-UseWsl). WSL is never
     # started automatically, so it does not spin up the VM behind your back.
@@ -275,12 +305,19 @@ if ($effectiveDryRun) { Write-Host "(dry-run: no changes will be made)" }
 Invoke-Rsync -Flags $flags
 $exitCode = $LASTEXITCODE
 
-if ($exitCode -ne 0) {
+# Treat rsync exit 23 (partial transfer) / 24 (vanished source) as
+# success-with-warning so the post-run reminder still fires — matches the
+# bash variant (prior F-10 fix) and keeps both variants in cross-variant
+# parity. Anything else is a hard failure.
+if ($exitCode -ne 0 -and $exitCode -ne 23 -and $exitCode -ne 24) {
     exit $exitCode
 }
 
 if ($deletePreviewOnly) {
     Write-Host "Preview complete. Re-run with -ConfirmDelete to apply deletions."
+}
+elseif ($exitCode -eq 23 -or $exitCode -eq 24) {
+    Write-Warning ("Download completed with rsync exit {0} (partial transfer or vanished source — review messages above)." -f $exitCode)
 }
 else {
     Write-Host "Download completed."

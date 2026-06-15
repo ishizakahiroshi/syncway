@@ -12,8 +12,10 @@ Initial release. Bidirectional `rsync over ssh` between a remote server (any hos
 ### Added
 - Download scripts `script/sync-from-dev-server.ps1` / `.sh` (remote -> local).
 - Upload scripts `script/sync-to-dev-server.ps1` / `.sh` (local -> remote).
-- Windows-first PowerShell scripts: auto-fallback from WSL `rsync` to native `rsync.exe`;
-  bash scripts auto-detect cwrsync (Scoop) and convert paths to `/cygdrive`.
+- Windows-first PowerShell scripts: default to native `rsync.exe` (e.g. cwrsync)
+  and never start WSL automatically; opt in to WSL's `rsync` with `-UseWsl` /
+  `SYNCWAY_USE_WSL=1`. bash scripts auto-detect cwrsync (Scoop) and convert
+  paths to `/cygdrive`.
 - Direct sync into a Docker container via `--rsync-path="docker exec -i <name> rsync"`,
   keeping dry-run, diff, delete-preview, and update protection fully working.
 - Symmetric delete safety on both directions: deletions are OFF by default;

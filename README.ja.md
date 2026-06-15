@@ -103,6 +103,8 @@ bash は `--delete`（プレビュー）→ `--delete --confirm-delete`（適用
 
 対象ファイルがコンテナ内部 FS にしか無い場合は、rsync をそのコンテナへ向けます。コンテナ側に `rsync` がインストールされている必要があり、`RemotePath` は**コンテナ内のパス**として解釈されます。
 
+> **リモート側の権限要件。** SSH ログイン先のユーザーが docker daemon と通信できる必要があります（Linux なら `docker` グループ所属、または rootful daemon access）。`docker` グループ所属は Linux 上では実質 root と同等の権限を意味します。`--container` を有効にするのは、そのレベルの信頼を許容できるホストに限定してください。
+
 ```powershell
 # コンテナへアップロード
 .\script\sync-to-dev-server.ps1 `
@@ -160,16 +162,26 @@ AI コーディングエージェント（Claude Code / Codex / Cursor など）
 | `-ConfirmDelete` | `--confirm-delete` | `-Delete` と併用で実削除 |
 | `-IncludeGit` | `--include-git` | `.git/` を除外しない |
 | `-StrictHostKey` | `--strict-host-key` | ホスト鍵が `~/.ssh/known_hosts` に登録済みであることを必須にする（`StrictHostKeyChecking=yes`）。既定は `accept-new`、下の [SSH ホスト鍵ポリシー](#ssh-ホスト鍵ポリシー-tofu) を参照 |
-| `-UseWsl` | なし（bash 版は WSL を使わない） | WSL の rsync を使う（既定はネイティブ `rsync.exe` のみ・`SYNCWAY_USE_WSL=1` でも可） |
+| `-UseWsl` | なし（bash 版は WSL を使わない） | WSL の rsync を使う（既定はネイティブ `rsync.exe` のみ・`SYNCWAY_USE_WSL=1` でも可。下の [環境変数](#環境変数) を参照） |
 | `-DryRun` | `--dry-run` / `-d` | プレビューのみ |
 
 ダウンロード側も同じオプション体系です（`-Update` はアップロード専用なので除く）。ダウンロードでの `-Delete` はローカルファイルに作用します。
+
+### 環境変数
+
+上の表の各オプション対応 env（`REMOTE_PATH` / `LOCAL_PATH` / `SSH_KEY` / `SSH_PORT` / `EXCLUDES` / `CONTAINER`）に加えて、両系で共通の補助 env が 2 つあります。
+
+| 変数 | 役割 |
+|---|---|
+| `SYNCWAY_RSYNC` | 信頼する `rsync`（または `rsync.exe`）の絶対パスを指定。PowerShell・bash の両系で Scoop の cwrsync 検出や `PATH` 検索より優先される。署名済み／監査済みビルドへの固定や、テスト用 stub への向け替えに使える。 |
+| `SYNCWAY_USE_WSL` | PowerShell 系で WSL の `rsync` を使う opt-in（`-UseWsl` と同じ）。truthy として認める値は `1` / `true` / `yes` / `on`（大文字小文字無視）。それ以外（`0` / `false` / `no` 含む）は WSL **OFF**（ネイティブ `rsync.exe` を使用）。bash 系は WSL を一切起動しない。 |
 
 ## 注意
 
 - 接続先の実値（host / 鍵パス / コンテナ名）は各自のローカル設定から渡してください。リポジトリには入れないこと。
 - 末尾スラッシュは rsync の意味論に従います。スクリプトが送信元/宛先を正規化するので `myproj` と `myproj/` は同じ挙動になります。
 - `docs/local/` と `.claude/` は、ローカル限定の運用メモ・設定用に gitignore 済みです。
+- Windows での `rsync` 導入: Syncway は Scoop の cwrsync（`scoop install rsync`）で動作確認していますが、`Get-Command rsync.exe` で解決できる cwrsync 互換ビルドなら他のパッケージマネージャ（Chocolatey / winget / MSYS2 pacman など）でも動きます。特定のバイナリに固定したい場合は `SYNCWAY_RSYNC` に絶対パスを設定してください。
 
 ### SSH ホスト鍵ポリシー (TOFU)
 

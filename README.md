@@ -103,6 +103,12 @@ bash uses `--delete` (preview) → `--delete --confirm-delete` (apply). The same
 
 When the target files live only inside a container's filesystem, point rsync at it. The container must have `rsync` installed; `RemotePath` is then interpreted **inside** the container.
 
+> **Remote-side privilege requirement.** The SSH-login user on the remote must
+> also be able to talk to the docker daemon (membership in the `docker` group
+> on Linux, or rootful daemon access). Docker-group membership is effectively
+> root on Linux — only enable `--container` on hosts where that trust level is
+> acceptable.
+
 ```powershell
 # Upload into a container
 .\script\sync-to-dev-server.ps1 `
@@ -161,16 +167,26 @@ never put my host, key path, or container name into any committed file.
 | `-ConfirmDelete` | `--confirm-delete` | Required with `-Delete` to actually delete |
 | `-IncludeGit` | `--include-git` | Do not exclude `.git/` |
 | `-StrictHostKey` | `--strict-host-key` | Require the remote host key to already be in `~/.ssh/known_hosts` (`StrictHostKeyChecking=yes`). Default is `accept-new` — see [SSH host key policy](#ssh-host-key-policy-tofu) below |
-| `-UseWsl` | n/a (bash never uses WSL) | Opt in to WSL's rsync (default uses native `rsync.exe` only; also `SYNCWAY_USE_WSL=1`) |
+| `-UseWsl` | n/a (bash never uses WSL) | Opt in to WSL's rsync (default uses native `rsync.exe` only; also `SYNCWAY_USE_WSL=1` — see [Environment variables](#environment-variables)) |
 | `-DryRun` | `--dry-run` / `-d` | Preview only |
 
 The download scripts share the same options (minus `-Update`, which is upload-only); there `-Delete` affects local files.
+
+### Environment variables
+
+In addition to the per-option env vars in the table above (`REMOTE_PATH`, `LOCAL_PATH`, `SSH_KEY`, `SSH_PORT`, `EXCLUDES`, `CONTAINER`), both variants honor:
+
+| Variable | Effect |
+|---|---|
+| `SYNCWAY_RSYNC` | Absolute path to a trusted `rsync` (or `rsync.exe`) binary. Takes precedence over Scoop's cwrsync detection and `PATH` lookup in both PowerShell and bash variants. Useful to pin a signed/audited build or stub for testing. |
+| `SYNCWAY_USE_WSL` | Opt in to WSL's `rsync` in the PowerShell variants (same as `-UseWsl`). Accepted truthy values: `1`, `true`, `yes`, `on` (case-insensitive). Any other value — including `0`, `false`, `no` — leaves WSL **off** (native `rsync.exe` is used). bash variants never touch WSL. |
 
 ## Notes
 
 - Pass the real connection values (host / key path / container name) from your own local config. Keep them out of the repo.
 - Trailing slashes follow rsync semantics; the scripts normalize the source/destination so `myproj` and `myproj/` behave the same.
 - `docs/local/` and `.claude/` are gitignored for local-only operational notes and settings.
+- Installing `rsync` on Windows: Syncway has been tested with Scoop's cwrsync (`scoop install rsync`), but any cwrsync-compatible build resolved by `Get-Command rsync.exe` works (Chocolatey, winget, MSYS2 pacman, etc.). To pin a specific binary, set `SYNCWAY_RSYNC` to its full path.
 
 ### SSH host key policy (TOFU)
 
