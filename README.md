@@ -25,6 +25,21 @@ Bidirectional `rsync over ssh` between a remote server — anything you can SSH 
 | `script/sync-from-dev-server.ps1` / `.sh` | Download (remote → local) |
 | `script/sync-to-dev-server.ps1` / `.sh`   | Upload (local → remote) |
 
+## Two Ways to Use It
+
+Syncway is just scripts, so you can drive it however you like:
+
+- **Run the scripts directly (default).** Clone the repo and call
+  `script/*.ps1` / `*.sh` with arguments. Full control, easy to repeat for a
+  sync you run often. Start here — the Quick Start below is exactly this.
+- **Hand it to an AI agent (optional).** Open your AI coding agent inside the
+  Syncway folder and let it ask for the details and pick the right script for
+  you. See [Set It Up With an AI Agent](#set-it-up-with-an-ai-agent). Handy for
+  first-time wiring; you still confirm the dry-run yourself.
+
+Either way the safety rules are the same: dry-run first, no deletions without an
+explicit second confirmation, and no secrets in the repo.
+
 ## Quick Start
 
 Always start with `-DryRun` / `--dry-run` to preview before touching anything.
@@ -145,6 +160,7 @@ never put my host, key path, or container name into any committed file.
 | `-Delete` | `--delete` | Mirror (preview only by itself) |
 | `-ConfirmDelete` | `--confirm-delete` | Required with `-Delete` to actually delete |
 | `-IncludeGit` | `--include-git` | Do not exclude `.git/` |
+| `-StrictHostKey` | `--strict-host-key` | Require the remote host key to already be in `~/.ssh/known_hosts` (`StrictHostKeyChecking=yes`). Default is `accept-new` — see [SSH host key policy](#ssh-host-key-policy-tofu) below |
 | `-UseWsl` | n/a (bash never uses WSL) | Opt in to WSL's rsync (default uses native `rsync.exe` only; also `SYNCWAY_USE_WSL=1`) |
 | `-DryRun` | `--dry-run` / `-d` | Preview only |
 
@@ -155,6 +171,20 @@ The download scripts share the same options (minus `-Update`, which is upload-on
 - Pass the real connection values (host / key path / container name) from your own local config. Keep them out of the repo.
 - Trailing slashes follow rsync semantics; the scripts normalize the source/destination so `myproj` and `myproj/` behave the same.
 - `docs/local/` and `.claude/` are gitignored for local-only operational notes and settings.
+
+### SSH host key policy (TOFU)
+
+All scripts pass `-o StrictHostKeyChecking=accept-new` to ssh by default. This means:
+
+- **First connection to an unknown host:** the host key is silently accepted and pinned into `~/.ssh/known_hosts`. No interactive prompt.
+- **Subsequent connections:** ssh verifies normally; a changed key fails the connection.
+
+This is convenient for spinning up new dev VPSes but trusts the network on first contact (TOFU — Trust On First Use). For stricter operation (require the host key to already be in `known_hosts`, e.g. pre-seeded via `ssh-keyscan`):
+
+- PowerShell: add `-StrictHostKey`
+- bash: add `--strict-host-key`
+
+That switches the option to `StrictHostKeyChecking=yes`.
 
 ## Project Info
 

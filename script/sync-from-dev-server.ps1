@@ -1,3 +1,75 @@
+<#
+.SYNOPSIS
+    Generic dev-server downloader (remote -> local, rsync over ssh).
+
+.DESCRIPTION
+    Pulls files from a remote SSH target into a local directory using rsync
+    over ssh. Safety: deletions are OFF by default. -Delete only PREVIEWS
+    (forced dry-run); add -ConfirmDelete to actually remove local files
+    absent on the remote. By default uses native rsync.exe (e.g. cwrsync);
+    WSL's rsync is never started automatically (opt in with -UseWsl).
+
+.PARAMETER Remote
+    SSH target, e.g. ubuntu@dev.example.com
+
+.PARAMETER RemotePath
+    Remote source directory (trailing slash recommended; normalized).
+
+.PARAMETER LocalPath
+    Local destination directory. Created if missing.
+
+.PARAMETER SshKey
+    SSH private key path (optional; falls back to ssh defaults).
+    Cannot contain a literal single quote.
+
+.PARAMETER Port
+    SSH port (default 22).
+
+.PARAMETER Exclude
+    Extra rsync exclude patterns. ".git/" is always excluded unless
+    -IncludeGit is given.
+
+.PARAMETER Container
+    Pull from a Docker container on the remote host via
+    "--rsync-path=docker exec -i <Container> rsync". RemotePath is then
+    interpreted INSIDE the container. Must match [A-Za-z0-9][A-Za-z0-9_.-]*.
+
+.PARAMETER Delete
+    Mirror: remove local files that are absent on the remote.
+    SAFETY: by itself this only PREVIEWS (forced dry-run). Add
+    -ConfirmDelete to actually delete.
+
+.PARAMETER ConfirmDelete
+    Required alongside -Delete to actually perform deletions.
+
+.PARAMETER IncludeGit
+    Do not exclude .git/.
+
+.PARAMETER UseWsl
+    Use WSL's rsync instead of native rsync.exe. WSL is never started
+    automatically; this opts in to using it.
+
+.PARAMETER StrictHostKey
+    Require the remote host key to already be in ~/.ssh/known_hosts
+    (ssh StrictHostKeyChecking=yes). Default is accept-new (TOFU on
+    first contact).
+
+.PARAMETER DryRun
+    Preview only, make no changes.
+
+.EXAMPLE
+    .\sync-from-dev-server.ps1 -Remote ubuntu@dev.example.com `
+        -RemotePath /home/<user>/dev/myproj/ `
+        -LocalPath C:\projects\myproj\ -DryRun
+
+.EXAMPLE
+    .\sync-from-dev-server.ps1 -Remote ubuntu@dev.example.com `
+        -RemotePath /app/ -LocalPath C:\projects\app\ -Container my_container
+
+.NOTES
+    SSH option StrictHostKeyChecking=accept-new is used (TOFU on first
+    contact). For full help, run: Get-Help .\sync-from-dev-server.ps1 -Full
+#>
 [CmdletBinding()]
 param(
     # SSH target, e.g. ubuntu@dev.example.com
@@ -24,6 +96,9 @@ param(
     #   --rsync-path="docker exec -i <Container> rsync"
     # RemotePath is then interpreted INSIDE the container. Requires rsync to be
     # installed inside the container. Keeps dry-run / delete preview working.
+    # Restricted to Docker's container-name charset so the value cannot inject
+    # shell metacharacters into the remote command rsync runs.
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_.-]*$|^$')]
     [string]$Container,
 
     # Delete local files that no longer exist on the remote (full mirror).
@@ -39,6 +114,10 @@ param(
     # never started automatically. Pass -UseWsl / SYNCWAY_USE_WSL=1 to opt in to
     # WSL's rsync instead.
     [switch]$UseWsl,
+
+    # Require the remote host key to already be in known_hosts. Default is
+    # accept-new (TOFU on first contact, then verify on subsequent runs).
+    [switch]$StrictHostKey,
 
     [switch]$DryRun
 )
@@ -76,11 +155,16 @@ function Get-NativeRsync {
 function Get-SshCommand {
     param([string]$KeyPath)
 
+    # rsync forwards the -e value to /bin/sh which re-splits on whitespace, so
+    # single-quote the key path to survive paths containing spaces (very common
+    # on Windows: %USERPROFILE%\.ssh\...). KeyPath cannot contain a
+    # literal single quote — documented in the .sh usage block.
     $parts = @("ssh")
     if (-not [string]::IsNullOrWhiteSpace($KeyPath)) {
-        $parts += @("-i", $KeyPath)
+        $parts += @("-i", "'$KeyPath'")
     }
-    $parts += @("-p", "$Port", "-o", "StrictHostKeyChecking=accept-new")
+    $hostKeyPolicy = if ($StrictHostKey) { "yes" } else { "accept-new" }
+    $parts += @("-p", "$Port", "-o", "StrictHostKeyChecking=$hostKeyPolicy")
     return ($parts -join " ")
 }
 
@@ -92,7 +176,7 @@ function Invoke-Rsync {
     )
 
     $localFull = [System.IO.Path]::GetFullPath($LocalPath)
-    $remoteSource = ("{0}:{1}" -f $Remote, $RemotePath.TrimEnd("/") + "/")
+    $remoteSource = "{0}:{1}" -f $Remote, ($RemotePath.TrimEnd("/") + "/")
 
     $forceWsl = $UseWsl -or -not [string]::IsNullOrWhiteSpace($env:SYNCWAY_USE_WSL)
 

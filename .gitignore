@@ -1,10 +1,43 @@
 # Local-only operational notes (server IPs, container names, paths, etc.)
 docs/local/
 
-# Claude Code local settings (may contain tokens)
+# Claude Code / AI tool local settings (may contain tokens)
 .claude/
 
-# OS / editor noise
+# Local/private AI guidance & config (kept out of public clone)
+*.local.md
+*.local.json
+*.local
+*.local.*
+
+# --- 認証情報・secrets・鍵（public へ絶対に出さない。Syncway は SSH 鍵を扱うツールなので最重要）---
+*.pem
+*.key
+*.ppk
+*.p12
+*.pfx
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+.env
+.env.*
+secrets.*
+*.secret.*
+*credential*
+.netrc
+
+# --- ログ・一時・生成物 ---
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# --- OS / エディタ ---
 Thumbs.db
+desktop.ini
 .DS_Store
+.idea/
+.vscode/
 *.swp

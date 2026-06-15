@@ -25,6 +25,21 @@
 | `script/sync-from-dev-server.ps1` / `.sh` | ダウンロード（リモート → ローカル） |
 | `script/sync-to-dev-server.ps1` / `.sh`   | アップロード（ローカル → リモート） |
 
+## 2通りの使い方
+
+Syncway は単なるスクリプト集なので、好きな方法で使えます。
+
+- **スクリプトを直接実行する（既定）。** リポジトリを clone して
+  `script/*.ps1` / `*.sh` を引数付きで呼びます。フルコントロールでき、よく使う
+  同期を繰り返すのに向きます。まずはこちら — 下のクイックスタートがこれそのものです。
+- **AI エージェントに任せる（任意）。** AI コーディングエージェントを Syncway
+  フォルダ内で開けば、必要な情報を聞き取り、適切なスクリプトを選んで動かして
+  くれます。[AI エージェントでセットアップする](#ai-エージェントでセットアップする)
+  を参照。初回の配線に便利です（dry-run の確認は自分で行ってください）。
+
+どちらの場合も安全ルールは同じです。まず dry-run、削除は明示的な二段階確認なしには
+実行しない、秘密情報はリポジトリに入れない。
+
 ## クイックスタート
 
 何かを変更する前に、必ず `-DryRun` / `--dry-run` でプレビューしてください。
@@ -144,6 +159,7 @@ AI コーディングエージェント（Claude Code / Codex / Cursor など）
 | `-Delete` | `--delete` | 完全ミラー（単体ではプレビューのみ） |
 | `-ConfirmDelete` | `--confirm-delete` | `-Delete` と併用で実削除 |
 | `-IncludeGit` | `--include-git` | `.git/` を除外しない |
+| `-StrictHostKey` | `--strict-host-key` | ホスト鍵が `~/.ssh/known_hosts` に登録済みであることを必須にする（`StrictHostKeyChecking=yes`）。既定は `accept-new`、下の [SSH ホスト鍵ポリシー](#ssh-ホスト鍵ポリシー-tofu) を参照 |
 | `-UseWsl` | なし（bash 版は WSL を使わない） | WSL の rsync を使う（既定はネイティブ `rsync.exe` のみ・`SYNCWAY_USE_WSL=1` でも可） |
 | `-DryRun` | `--dry-run` / `-d` | プレビューのみ |
 
@@ -154,6 +170,20 @@ AI コーディングエージェント（Claude Code / Codex / Cursor など）
 - 接続先の実値（host / 鍵パス / コンテナ名）は各自のローカル設定から渡してください。リポジトリには入れないこと。
 - 末尾スラッシュは rsync の意味論に従います。スクリプトが送信元/宛先を正規化するので `myproj` と `myproj/` は同じ挙動になります。
 - `docs/local/` と `.claude/` は、ローカル限定の運用メモ・設定用に gitignore 済みです。
+
+### SSH ホスト鍵ポリシー (TOFU)
+
+各スクリプトは ssh に既定で `-o StrictHostKeyChecking=accept-new` を渡します。挙動は以下のとおり:
+
+- **未知のホストへの初回接続:** ホスト鍵を無言で受け入れ `~/.ssh/known_hosts` に pin する。対話プロンプトは出ない。
+- **2 回目以降:** 通常通り検証し、鍵が変わっていれば接続失敗。
+
+新規 dev VPS の立ち上げ直後でも引っかからない一方、初回はネットワークを信用する形（TOFU — Trust On First Use）になります。より厳格に運用したい場合（`ssh-keyscan` 等で `known_hosts` を事前に埋めた上で、未知ホストは拒否）:
+
+- PowerShell: `-StrictHostKey` を付ける
+- bash: `--strict-host-key` を付ける
+
+これで `StrictHostKeyChecking=yes` に切り替わります。
 
 ## ライセンス
 
