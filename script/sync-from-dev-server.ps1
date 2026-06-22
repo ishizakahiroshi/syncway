@@ -180,8 +180,9 @@ function Get-SshCommand {
 
     # rsync forwards the -e value to /bin/sh which re-splits on whitespace, so
     # single-quote the key path to survive paths containing spaces (very common
-    # on Windows: %USERPROFILE%\.ssh\...). KeyPath cannot contain a
-    # literal single quote — documented in the .sh usage block.
+    # on Windows when the local %USERPROFILE% contains a space, e.g. an account
+    # named "First Last"). KeyPath cannot contain a literal single quote —
+    # documented in the .sh usage block.
     $parts = @("ssh")
     if (-not [string]::IsNullOrWhiteSpace($KeyPath)) {
         $parts += @("-i", "'$KeyPath'")

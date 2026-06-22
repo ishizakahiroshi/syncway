@@ -23,7 +23,7 @@
   <text x="700" y="150" text-anchor="middle" font-size="20" font-weight="700" fill="#0f172a">Remote server</text>
   <text x="700" y="176" text-anchor="middle" font-size="13" fill="#64748b">rsync over ssh</text>
   <rect x="610" y="196" width="180" height="80" rx="8" fill="#f0fdf4" stroke="#bbf7d0"/>
-  <text x="700" y="222" text-anchor="middle" font-size="13" fill="#166534">/home/<user>/myproj</text>
+  <text x="700" y="222" text-anchor="middle" font-size="13" fill="#166534">/home/&lt;user&gt;/myproj</text>
   <text x="700" y="245" text-anchor="middle" font-size="11" fill="#475569">or Docker container FS</text>
   <text x="700" y="262" text-anchor="middle" font-size="11" fill="#475569">(docker exec rsync)</text>
 

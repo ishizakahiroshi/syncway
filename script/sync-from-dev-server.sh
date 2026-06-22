@@ -49,9 +49,9 @@ Examples:
 
 Environment variables:
   REMOTE_PATH=/home/<user>/dev/myproj/   (required)
-  LOCAL_PATH=/c/projects/myproj/              (required)
+  LOCAL_PATH=/c/projects/myproj/         (required)
   SSH_PORT=22                            (must be a positive integer)
-  SSH_KEY=/c/projects/.ssh/id_ed25519
+  SSH_KEY=$HOME/.ssh/id_ed25519
   CONTAINER=container_name               (or pass --container=name)
   EXCLUDES="node_modules/ dist/"         (space-separated extra rsync excludes)
   SYNCWAY_RSYNC=/c/tools/cwrsync/bin/rsync.exe
@@ -208,7 +208,8 @@ mkdir -p "$LOCAL_PATH_NATIVE"
 
 # Build the ssh command for rsync's -e. rsync forwards this string to /bin/sh
 # which re-splits on whitespace, so single-quote the key path to survive paths
-# containing spaces (common on Windows: %USERPROFILE%\.ssh\...).
+# containing spaces (common on Windows when %USERPROFILE% contains a space,
+# e.g. an account named "First Last").
 if [ -n "$STRICT_HOST_KEY" ]; then
 	SSH_HOST_KEY_OPT="StrictHostKeyChecking=yes"
 else

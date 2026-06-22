@@ -73,7 +73,7 @@ PowerShell:
   -Remote     ubuntu@dev.example.com `
   -RemotePath /home/<user>/dev/myproj/ `
   -LocalPath  C:\projects\myproj `
-  -SshKey     C:\projects\.ssh\id_ed25519 `
+  -SshKey     $env:USERPROFILE\.ssh\id_ed25519 `
   -Exclude    node_modules/,dist/ `
   -DryRun
 ```
@@ -81,7 +81,7 @@ PowerShell:
 bash:
 
 ```bash
-REMOTE_PATH=/home/<user>/dev/myproj/ LOCAL_PATH=/c/projects/myproj/ SSH_KEY=/c/projects/.ssh/id_ed25519 \
+REMOTE_PATH=/home/<user>/dev/myproj/ LOCAL_PATH=/c/projects/myproj/ SSH_KEY=$HOME/.ssh/id_ed25519 \
   ./script/sync-to-dev-server.sh ubuntu@dev.example.com --dry-run
 ```
 
@@ -115,7 +115,7 @@ When the target files live only inside a container's filesystem, point rsync at 
   -Remote     ubuntu@dev.example.com `
   -RemotePath /home/<user>/work/myproj/ `
   -LocalPath  C:\projects\myproj `
-  -SshKey     C:\projects\.ssh\id_ed25519 `
+  -SshKey     $env:USERPROFILE\.ssh\id_ed25519 `
   -Container  my_container
 ```
 
