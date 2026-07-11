@@ -41,3 +41,14 @@ desktop.ini
 .idea/
 .vscode/
 *.swp
+
+# === ツール生成キャッシュ（アカウント ID 等の識別子を含み得る・追跡しない） ===
+.wrangler/
+.vercel/
+.netlify/
+.firebase/
+.turbo/
+.parcel-cache/
+.terraform/
+.serverless/
+**/supabase/.temp/
