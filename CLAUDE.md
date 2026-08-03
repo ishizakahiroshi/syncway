@@ -65,10 +65,11 @@ These are the product's core promises — preserve them in every change:
 - **Never run a real sync without an explicit user go-ahead**, and never pass
   `-ConfirmDelete` / `--confirm-delete` unless the user has approved the delete
   preview. Default to additive (no deletions).
-- **Do not commit, push, or build on your own initiative** — only when the user
-  explicitly asks. Report what changed; don't ask "shall I commit?".
 - When wiring Syncway into a project, always show the exact
   `source -> destination` from a dry-run before suggesting the real run.
+- Common AI working rules (no unsolicited build/commit/push, secrets-scan duty,
+  `plan_*/bugfix_*/pending_*` md conventions, etc.) follow your AI tool's global
+  config (e.g. `~/.claude/CLAUDE.md` and `~/.claude/guides/`) — not duplicated here.
 
 ## Entry Points for Other Agents
 
