@@ -1,4 +1,11 @@
 ---
+cover:
+  path: portfolio/overview-2026-09-28.jpg
+  alt: {ja: "syncway の紹介動画", en: "syncway overview video"}
+video:
+  provider: youtube
+  id: "-tz-tnNmDT8"
+  durationSeconds: 20
 schemaVersion: 1
 color: "#3fa8a0"
 initials: "sy"

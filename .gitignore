@@ -59,3 +59,6 @@ desktop.ini
 # 開発計画 md はすべて docs/local/archive/ 配下で管理する。
 # リポ直下 archive/ へ置くと公開追跡されるため封をする（offline-md-editor-viewer ef29430 と同じ対処）。
 /archive/
+
+# Local video production files
+/brag-output/
