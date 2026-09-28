@@ -59,3 +59,21 @@ desktop.ini
 # 開発計画 md はすべて docs/local/archive/ 配下で管理する。
 # リポ直下 archive/ へ置くと公開追跡されるため封をする（offline-md-editor-viewer ef29430 と同じ対処）。
 /archive/
+# === obsidian-link: managed ===
+/docs/obsidian/
+# === /obsidian-link: managed ===
+
+# Local promo video sources and renders
+/brag-output/
+
+# === project-init 推奨の追記（2026-09-28・templates/gitignore から不足分のみ） ===
+*.swo
+*.jsonl
+.commandcode/
+.cursor/
+.codex-tmp/
+opencode.json*
+!.env.example
+scripts/local/
+.npmrc
+.pypirc
